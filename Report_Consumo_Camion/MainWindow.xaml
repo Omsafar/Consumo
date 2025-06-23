@@ -1,0 +1,123 @@
+﻿<Window x:Class="CamionReportGPT.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:CamionReportGPT"
+        Title="Report GPT Camion Chat" Height="600" Width="800"
+        Background="#FAFAFA"
+        FontFamily="Segoe UI">
+
+    <Window.Resources>
+        <local:ChatAlignmentConverter x:Key="ChatAlignmentConverter"/>
+        <local:ChatBubbleBackgroundConverter x:Key="ChatBubbleBackgroundConverter"/>
+        <local:ChatBubbleBorderBrushConverter x:Key="ChatBubbleBorderBrushConverter"/>
+        <local:UtenteToVisibilityConverter x:Key="UtenteToVisibilityConverter"/>
+    </Window.Resources>
+
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- CHAT -->
+        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
+            <ItemsControl x:Name="chatPanel">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Margin="5">
+                            <Border CornerRadius="12"
+                                Background="{Binding IsUtente, Converter={StaticResource ChatBubbleBackgroundConverter}}"
+                                BorderBrush="{Binding IsUtente, Converter={StaticResource ChatBubbleBorderBrushConverter}}"
+                                BorderThickness="1.5"
+                                HorizontalAlignment="{Binding IsUtente, Converter={StaticResource ChatAlignmentConverter}}"
+                                Padding="10"
+                                MaxWidth="500"
+                                Margin="5">
+                                <StackPanel>
+                                <TextBox Text="{Binding Testo}" 
+                                     IsReadOnly="True"
+                                     BorderThickness="0"
+                                     Background="Transparent"
+                                     TextWrapping="Wrap"
+                                     Padding="4"
+                                     IsReadOnlyCaretVisible="False"
+                                     Cursor="IBeam" />
+
+
+                                    <Button Content="✅ Utile"
+                                        Tag="{Binding}"
+                                        Click="btnSalvaEmbedding_Click"
+                                        Background="LightGreen"
+                                        Margin="5,5,0,0"
+                                        Padding="4"
+                                        FontWeight="Bold"
+                                        HorizontalAlignment="Right"
+                                        Visibility="{Binding IsUtente, Converter={StaticResource UtenteToVisibilityConverter}}"/>   
+                                </StackPanel>
+                            </Border>
+
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+         
+            </ItemsControl>
+        </ScrollViewer>
+
+
+
+     
+        <Border Grid.Row="1" Margin="0,10,0,0" Padding="8" Background="White" CornerRadius="12" BorderBrush="#CCCCCC" BorderThickness="1">
+            <DockPanel LastChildFill="True">
+                <Border Background="#F1F1F1" CornerRadius="8" VerticalAlignment="Center" Margin="0,0,10,0">
+                    <TextBox x:Name="txtInput"
+                             MinHeight="40"
+                             VerticalAlignment="Center"
+                             Padding="10"
+                             FontSize="14"
+                             BorderBrush="Transparent"
+                             Background="Transparent"
+                             AcceptsReturn="False"
+                             KeyDown="txtInput_KeyDown"
+                             VerticalContentAlignment="Center"
+                             Width="Auto"
+                             HorizontalAlignment="Stretch"/>
+
+                </Border>
+
+                <Button x:Name="btnInvia"
+                        Content=">"
+                        Click="btnInvia_Click"
+                        Width="65"
+                        Padding="8,4"
+                        FontWeight="Bold"
+                        Background="#007ACC"
+                        Foreground="White"
+                        BorderThickness="0"
+                        Cursor="Hand"
+                        Margin="0"
+                        HorizontalAlignment="Right">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border Background="{TemplateBinding Background}"
+                                    CornerRadius="8"
+                                    Padding="{TemplateBinding Padding}">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
+            </DockPanel>
+        </Border>
+
+        <!-- PROGRESS BAR -->
+        <ProgressBar x:Name="progressBar"
+     Grid.Row="1"
+     Height="10"
+     IsIndeterminate="True"
+     Visibility="Collapsed"
+     Margin="0,10,0,0"
+     Foreground="#007ACC"/>
+
+    </Grid>
+</Window>
+
