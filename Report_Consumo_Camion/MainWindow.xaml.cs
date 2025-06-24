@@ -1,13 +1,18 @@
 ﻿// MainWindow.xaml.cs – versione con RAG, feedback utente e salvataggio embedding
 // 20 Giugno 2025
 
+using CamionReportGPT.Vector;     // namespace dove hai messo HnswIndexService
+using CsvHelper;
+using HNSW.Net;
 using Microsoft.Data.SqlClient;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Data;
+using System.Diagnostics;
 using System.Globalization;
+using System.IO;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
@@ -19,15 +24,14 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
-using CamionReportGPT.Vector;     // namespace dove hai messo HnswIndexService
-using HNSW.Net;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 namespace CamionReportGPT
 {
     public partial class MainWindow : Window
     {
         #region ✔︎ Costanti di configurazione
-        public const string ConnString = "Server=192.168.1.24\\sgam;Database=PARATORI;User Id=sapara;Password=HAHAHHAHAHHA;Encrypt=True;TrustServerCertificate=True;";
-        public const string OpenAIApiKey = "Key";
+        public const string ConnString = "Server=192.168.1.24\\sgam;Database=PARATORI;User Id=sapara;Password=HAHAHHAHAH;Encrypt=True;TrustServerCertificate=True;";
+        public const string OpenAIApiKey = "key";
         public const string EmbModel = "text-embedding-3-small"; // modello embedding
         private const string AssistantId = "asst_JMGFXRnQZv4mz4cOim6lDnXe"; // assistant per testo esplicativo
 
@@ -56,6 +60,7 @@ Campi:
         private readonly HnswIndexService vecIdx;
         private string? UltimaDomandaUtente;
         private string? UltimaQuerySql;
+        private string? UltimoPythonCode;
         #endregion
 
 
@@ -122,7 +127,8 @@ Campi:
                 // 3) Salva su SQL e ottieni l’ID generato
                 int nuovoId = await RAGService.SalvaAsync(
                     UltimaDomandaUtente, UltimaQuerySql,
-                    testoEsplicativo, JsonConvert.SerializeObject(vec), UtenteCorrente);
+                    testoEsplicativo, JsonConvert.SerializeObject(vec), UtenteCorrente,
+                    UltimoPythonCode);
 
                 // 4) Inserisci nell’indice HNSW
                 vecIdx.Add(nuovoId.ToString(), vecNorm);
@@ -166,11 +172,11 @@ Campi:
             DebugMsg("Similarity",
                      hits.Count == 0
                          ? "Nessun hit."
-                         : $"Top score={hits[0].Score:F3} (soglia 0.50) → {(hits[0].Score > 0.50f ? "OK" : "KO")}");
+                         : $"Top score={hits[0].Score:F3} (soglia 0.70) → {(hits[0].Score > 0.70f ? "OK" : "KO")}");
 #endif
 
 
-            if (hits.Count > 0 && hits[0].Score > 0.50f)          // soglia empirica
+            if (hits.Count > 0 && hits[0].Score > 0.70f)          // soglia empirica
             {
                 int bestId = hits.Count > 0 ? hits[0].Id : -1;
                 var row = await RAGService.GetByIdAsync(bestId);   // Domanda, QuerySql, Testo
@@ -191,10 +197,17 @@ Campi:
 
             // 2) --- Chiedi a GPT di generare la SQL ------------------------------
             string sqlPrompt = await GeneraQuerySqlAsync(domandaUtente);   // implementato altrove
-            (string sql, int flag) = EstraiSqlEFlag(sqlPrompt);            // @0 / @1
+            var (sql, flag, py) = EstraiSqlPythonEFlag(sqlPrompt);   // @0 / @1 + python
 
             DataTable result = await EseguiQueryAsync(sql);
             string tableMd = DataTableToMarkdown(result);
+            string? pythonResult = null;
+            if (!string.IsNullOrWhiteSpace(py))
+            {
+                string csv = Path.GetTempFileName();
+                SaveDataTableToCsv(result, csv);
+                pythonResult = await EseguiPythonAsync(py, csv);
+            }
 
             if (flag == 1)
             {
@@ -207,12 +220,16 @@ Campi:
                 messaggi.Add(new MessaggioChat { Testo = tableMd, IsUtente = false });
             }
 
+            if (pythonResult != null)
+                messaggi.Add(new MessaggioChat { Testo = pythonResult, IsUtente = false });            
             // 3) Memorizzo l’ultima domanda e query (servono in btnFeedback_Click)
+           
             UltimaDomandaUtente = domandaUtente;
             UltimaQuerySql = sql;
+            UltimoPythonCode = py;
 
 
-    }
+        }
 
         #endregion
 
@@ -223,7 +240,7 @@ Campi:
                                (await EmbeddingService.GetEmbeddingAsync(domanda)).ToArray());
 
             var top = vecIdx.Search(qVec, k: 3);
-            if (top.Count == 0 || top[0].Score < 0.50f) return null;
+            if (top.Count == 0 || top[0].Score < 0.70f) return null;
 
             var row = await RAGService.GetByIdAsync(top[0].Id);
             if (row == null) return null;
@@ -263,20 +280,44 @@ Campi:
 
         private static string BuildInitialPrompt(string domandaUtente)
         {
+
             var sb = new StringBuilder();
-            sb.AppendLine("Sei un assistente dati. Se per rispondere devi consultare il DB, restituisci SOLO una query SQL tra due @, seguita da @0 o @1.");
-            sb.AppendLine("Scegli @1 SOLO se la domanda richiede una spiegazione; altrimenti @0.");
-            sb.AppendLine("Se scegli @1 spiega il risultato della query senza dire che proviene da una query");
-            sb.AppendLine("Genera query T-SQL per SQL Server.");
-            sb.AppendLine("►IMPORTANTE: genera SEMPRE e SOLO UNA query racchiusa tra @ e @, " +
-                            "anche se servono più calcoli. Unisci sub-query con CTE, CROSS JOIN o UNION. " +
-                            "Non produrre mai più di un blocco @…@.");
-            sb.AppendLine("Quando crei più CTE, usa nelle CTE successive gli stessi alias esatti che hai definito in precedenza; evita di cambiare il nome");
-            sb.AppendLine("Chiudi SEMPRE la query SQL direttamente con @1 o @0 senza newline dopo.");
-            sb.AppendLine("Non includere ```sql o blocchi markdown nel codice. Scrivi solo testo SQL puro tra @ e @.");
-            sb.AppendLine("Una sola query per risposta. No blocchi markdown.");
+            /* ──────────────────── RULES ──────────────────── */
+            sb.AppendLine("Sei un assistente per l’analisi di dati aziendali nel settore trasporti.");
+            sb.AppendLine("Regole di risposta (obbligatorie):");
+            sb.AppendLine("1.Se servono dati, genera UN SOLO blocco SQL compreso tra delimitatori @ … @");
+            sb.AppendLine("   • Inserisci subito dopo l'ultimo @ un flag: 1 se l’utente desidera anche una spiegazione, altrimenti 0.");
+            sb.AppendLine("2. Se per rispondere è necessario calcolo matematico avanzato (regressioni, equazioni, correlazioni, forecast,");
+            sb.AppendLine("   deviazione standard, ecc.) aggiungi subito dopo un blocco Python compreso tra # python … #.");
+            sb.AppendLine("   • Assumi che il DataFrame risultante dalla query sia già caricato in una variabile `df`.");
+            sb.AppendLine("   • Usa SOLO le librerie: pandas, numpy, sympy, scipy, scikit-learn.");
+            sb.AppendLine("   • Termina SEMPRE lo script con:");
+            sb.AppendLine("       import json, sys");
+            sb.AppendLine("       json.dump({\"result\": <tuo_valore>}, sys.stdout)");
+            sb.AppendLine("3. Se la domanda si risolve con sole funzioni SQL standard (SUM, AVG, MAX, COUNT, MIN) NON generare il blocco Python.");
+            sb.AppendLine("4. NON scrivere testo fuori dai blocchi. Nessuna spiegazione, commento o Markdown extra.");
             sb.AppendLine();
-            sb.AppendLine("Schema tabelle:");
+
+            /* ──────────────────── FEW-SHOT EXAMPLE (helpful but not echoed) ──────────────────── */
+            sb.AppendLine("Esempio (non mostrarlo all’utente, serve solo come riferimento di formato):");
+            sb.AppendLine("@SELECT AVG([Consumo_km/l]) AS ConsumoMedio");
+            sb.AppendLine("  FROM tbDatiConsumo");
+            sb.AppendLine("  WHERE Targa = 'AB123CD' AND Data BETWEEN '2023-01-01' AND '2023-12-31'@0");
+            sb.AppendLine();
+            sb.AppendLine("@SELECT Data, [Consumo_km/l]");
+            sb.AppendLine("  FROM tbDatiConsumo");
+            sb.AppendLine("  WHERE Targa = 'AB123CD' AND Data >= '2020-01-01'@0");
+            sb.AppendLine("#");
+            sb.AppendLine("import pandas as pd, numpy as np, json, sys");
+            sb.AppendLine("from sklearn.linear_model import LinearRegression");
+            sb.AppendLine("df['DataNum'] = pd.to_datetime(df['Data']).map(pd.Timestamp.toordinal)");
+            sb.AppendLine("model = LinearRegression().fit(df[['DataNum']], df['Consumo_km/l'])");
+            sb.AppendLine("future = pd.to_datetime(['2024-12-01']).map(pd.Timestamp.toordinal).values.reshape(-1,1)");
+            sb.AppendLine("pred = model.predict(future)");
+            sb.AppendLine("json.dump({\"result\": float(pred[0])}, sys.stdout)");
+            sb.AppendLine("#");
+            sb.AppendLine();
+            sb.AppendLine("Schema tabelle a cui dovrai fare riferimento per le query:");
             sb.AppendLine(SchemaDescrizione);
             sb.AppendLine();
             sb.AppendLine("Domanda utente: " + domandaUtente);
@@ -289,40 +330,70 @@ Campi:
             return await CallGPTAsync(prompt);
         }
 
-        private static (string Sql, int Flag) EstraiSqlEFlag(string gptReply)
+        private static (string Sql, int Flag, string? Python) EstraiSqlPythonEFlag(string gptReply)
         {
-            var m = Regex.Match(gptReply, "@(.+?)@(0|1)", RegexOptions.Singleline);
-            if (!m.Success) throw new Exception("GPT non ha restituito blocco @…@");
+            var sqlMatch = Regex.Match(gptReply, "@(.+?)@(0|1)", RegexOptions.Singleline);
+            if (!sqlMatch.Success) throw new Exception("GPT non ha restituito blocco @…@");
 
-            // ▼ NUOVE variabili locali
-            string sql = m.Groups[1].Value.Trim();
-            int flag = int.Parse(m.Groups[2].Value);
+            string sql = sqlMatch.Groups[1].Value.Trim();
+            int flag = int.Parse(sqlMatch.Groups[2].Value);
+
+            string? py = null;
+            var pyMatch = Regex.Match(gptReply, "#(.*?)#", RegexOptions.Singleline);
+            if (pyMatch.Success)
+                py = pyMatch.Groups[1].Value.Trim();
 
 #if DEBUG
-            MessageBox.Show($"Estratta SQL ({sql.Length} char) – flag @{flag}",
-                            "DEBUG – EstraiSqlEFlag");
+            MessageBox.Show($"Estratta SQL ({sql.Length} char) – flag @{flag}\nPython length={(py?.Length ?? 0)}",
+                            "DEBUG – EstraiSqlPythonEFlag");
 #endif
-            return (sql, flag);
+            return (sql, flag, py);
         }
 
 
 
 
         #region ▶︎ SQL utils
-        private async Task<DataTable> EseguiQueryAsync(string sql)
+        private async Task<DataTable> EseguiQueryAsync(string sql, CancellationToken ct = default)
         {
-            var dt = new DataTable();
-            await using var conn = new SqlConnection(ConnString);
-            await conn.OpenAsync();
-            await using var cmd = new SqlCommand(sql, conn);
-            await using var rdr = await cmd.ExecuteReaderAsync();
-            dt.Load(rdr);
-#if DEBUG
-            DebugMsg("SQL Exec", $"Righe={dt.Rows.Count}, Colonne={dt.Columns.Count}");
-#endif
+            try
+            {
+                using var conn = new SqlConnection(ConnString);
+                using var cmd = new SqlCommand(sql, conn)
+                {
+                    CommandTimeout = 120
+                };
+                await conn.OpenAsync(ct);
 
-            return dt;
+                var dt = new DataTable();
+                using var rdr = await cmd.ExecuteReaderAsync(ct);
+                dt.Load(rdr);
+                return dt;
+            }
+            catch (SqlException ex)
+{
+    var sb = new StringBuilder();
+    sb.AppendLine("Errore SQL:");
+    sb.AppendLine(ex.Message);
+
+    var result = MessageBox.Show(
+        sb.ToString() + "\n\nVuoi copiare la query negli appunti?",
+        "Errore SQL",
+        MessageBoxButton.YesNo,
+        MessageBoxImage.Error);
+
+    if (result == MessageBoxResult.Yes)
+        Clipboard.SetText(sql);
+
+#if DEBUG
+    Debug.WriteLine("QUERY FALLITA:\n" + sql);
+    Debug.WriteLine(ex);
+#endif
+    throw;
+}
+
         }
+
         #endregion
         private string DataTableToMarkdown(DataTable table)
         {
@@ -352,8 +423,48 @@ Campi:
             return sb.ToString();
         }
 
+        private static void SaveDataTableToCsv(DataTable table, string path)
+        {
+            using var writer = new StreamWriter(path);
+            using var csv = new CsvWriter(writer, CultureInfo.InvariantCulture);
+            // Header
+            foreach (DataColumn col in table.Columns)
+                csv.WriteField(col.ColumnName);
+            csv.NextRecord();
+            // Rows
+            foreach (DataRow row in table.Rows)
+            {
+                foreach (var cell in row.ItemArray)
+                    csv.WriteField(cell);
+                csv.NextRecord();
+            }
+        }
+
+        private static async Task<string> EseguiPythonAsync(string code, string csvPath)
+        {
+            string scriptFile = Path.GetTempFileName() + ".py";
+            await File.WriteAllTextAsync(scriptFile,
+                $"import pandas as pd\nimport json, sys\n" +
+                $"df=pd.read_csv(r'{csvPath}')\n" + code);
+
+            var psi = new ProcessStartInfo("python3", scriptFile)
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            };
+
+            using var proc = Process.Start(psi)!;
+            string output = await proc.StandardOutput.ReadToEndAsync();
+            string err = await proc.StandardError.ReadToEndAsync();
+            await proc.WaitForExitAsync();
+            File.Delete(scriptFile);
+            if (proc.ExitCode != 0)
+                return $"Errore Python: {err}";
+            return output.Trim();
+        }
 
 
+        
         private async void btnSalvaEmbedding_Click(object sender, RoutedEventArgs e)
         {
             if (messaggi.Count < 2) return;
@@ -476,13 +587,13 @@ Campi:
         /// <summary>
         /// Inserisce un nuovo record in tbEmbeddingRAG e restituisce l’ID appena creato.
         /// </summary>
-        public static async Task<int> SalvaAsync(string domanda, string sql, string testo, string vettoreJson, string utente)
+        public static async Task<int> SalvaAsync(string domanda, string sql, string testo, string vettoreJson, string utente, string? pythonCode)
         {
             const string INS = @"
                                                                     INSERT INTO tbEmbeddingRAG
-                                                                      (DomandaUtente, QuerySql, TestoEsplicativo, EmbeddingJson, UtenteValidazione)
-                                                                    VALUES
-                                                                      (@domanda, @sql, @testo, @vector, @utente);
+                                                                      (DomandaUtente, QuerySql, TestoEsplicativo, EmbeddingJson, UtenteValidazione, PythonCode)
+                                                                    VALUES                                             
+                                                                      (@domanda, @sql, @testo, @vector, @utente, @py);
                                                                     SELECT CAST(SCOPE_IDENTITY() AS int);";
 
             await using var c = new SqlConnection(MainWindow.ConnString);
@@ -494,22 +605,24 @@ Campi:
             cmd.Parameters.AddWithValue("@testo", testo);
             cmd.Parameters.AddWithValue("@vector", vettoreJson);
             cmd.Parameters.AddWithValue("@utente", utente);
+            cmd.Parameters.AddWithValue("@py", (object?)pythonCode ?? DBNull.Value);
 
             object? idObj = await cmd.ExecuteScalarAsync();
             return Convert.ToInt32(idObj);
         }
 
-        public record RagRow(string Domanda, string QuerySql, string Testo);
+        public record RagRow(string Domanda, string QuerySql, string Testo, string? PythonCode);
         public static async Task<RagRow?> GetByIdAsync(int id)
         {
-            const string SEL = "SELECT DomandaUtente, QuerySQL, TestoEsplicativo FROM tbEmbeddingRAG WHERE ID=@id";
+            const string SEL = "SELECT DomandaUtente, QuerySQL, TestoEsplicativo, PythonCode FROM tbEmbeddingRAG WHERE ID=@id";
             await using var c = new SqlConnection(MainWindow.ConnString);
             await c.OpenAsync();
             var cmd = new SqlCommand(SEL, c);
             cmd.Parameters.AddWithValue("@id", id);
             await using var rdr = await cmd.ExecuteReaderAsync();
             if (!rdr.Read()) return null;
-            return new RagRow(rdr.GetString(0), rdr.GetString(1), rdr.GetString(2));
+            string? py = rdr.IsDBNull(3) ? null : rdr.GetString(3);
+            return new RagRow(rdr.GetString(0), rdr.GetString(1), rdr.GetString(2), py);
         }
     }
 
