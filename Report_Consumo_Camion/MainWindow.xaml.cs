@@ -27,6 +27,10 @@ namespace CamionReportGPT
     {
         #region ✔︎ Costanti di configurazione
         public const string ConnString = "Server=192.168.1.24\\sgam;Database=PARATORI;User Id=sapara;Password=HAHAHHAHAHHA;Encrypt=True;TrustServerCertificate=True;";
+        public const string OpenAIApiKey = "Key";
+        public const string EmbModel = "text-embedding-3-small"; // modello embedding
+        private const string AssistantId = "asst_JMGFXRnQZv4mz4cOim6lDnXe"; // assistant per testo esplicativo
+
         #endregion
 
         #region ✔︎ Schema invio a GPT
