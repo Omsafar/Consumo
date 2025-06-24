@@ -46,7 +46,7 @@
 
                                     <Button Content="✅ Utile"
                                         Tag="{Binding}"
-                                        Click="btnSalvaEmbedding_Click"
+                                        Click="btnFeedback_Click"
                                         Background="LightGreen"
                                         Margin="5,5,0,0"
                                         Padding="4"

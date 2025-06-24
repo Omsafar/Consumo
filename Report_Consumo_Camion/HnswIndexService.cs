@@ -25,6 +25,9 @@ namespace CamionReportGPT.Vector
         {
             _pathGraph = pathGraph;
 
+            // Ensure the folder for the index exists so we can later save files
+            Directory.CreateDirectory(Path.GetDirectoryName(_pathGraph)!);
+
             // 1) Preparo i parametri
             var parms = new SmallWorld<float[], float>.Parameters
             {
@@ -113,7 +116,7 @@ namespace CamionReportGPT.Vector
             using var fs = File.Create(_pathGraph);
             _graph.SerializeGraph(fs);
 
-            SaveVectors(VectorsPath, _vectors);   // ← ora è sicuro
+            SaveVectors(VectorsPath, _vectors);   
             SaveIds(IdsPath, _ids);
             MessageBox.Show($"Indice salvato in:\n{_pathGraph}\nVettori in:\n{VectorsPath}\nIds in:\n{IdsPath}",
                             "HNSW Save OK");
