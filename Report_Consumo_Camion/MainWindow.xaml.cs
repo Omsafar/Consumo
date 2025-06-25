@@ -1,7 +1,7 @@
 ﻿// MainWindow.xaml.cs – versione con RAG, feedback utente e salvataggio embedding
 // 20 Giugno 2025
 
-using CamionReportGPT.Vector;     // namespace dove hai messo HnswIndexService
+using Report_Consumo_Camion.Vector;     // namespace dove hai messo HnswIndexService
 using CsvHelper;
 using HNSW.Net;
 using Microsoft.Data.SqlClient;
@@ -25,7 +25,7 @@ using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
 using static System.Runtime.InteropServices.JavaScript.JSType;
-namespace CamionReportGPT
+namespace Report_Consumo_Camion
 {
     public partial class MainWindow : Window
     {
@@ -577,36 +577,7 @@ Campi:
     }
 
     #region ▶︎ Model & converters
-    public class MessaggioChat
-    {
-        public string? Testo { get; set; }
-        public bool IsUtente { get; set; }
-        public string? Result { get; set; }
-        public string? Formula { get; set; }
-        public string? Explain { get; set; }
-        public bool HasPython => !string.IsNullOrWhiteSpace(Result);
-    }
-
-    public record PythonOutput(string Result, string Formula, string Explain);
-    public class ChatAlignmentConverter : IValueConverter { public object Convert(object v, Type t, object p, CultureInfo c) => (bool)v ? HorizontalAlignment.Left : HorizontalAlignment.Right; public object ConvertBack(object v, Type t, object p, CultureInfo c) => null!; }
-    public class ChatBubbleBackgroundConverter : IValueConverter { public object Convert(object v, Type t, object p, CultureInfo c) => new SolidColorBrush((bool)v ? Colors.LightGray : Colors.WhiteSmoke); public object ConvertBack(object v, Type t, object p, CultureInfo c) => null!; }
-    public class ChatBubbleBorderBrushConverter : IValueConverter { public object Convert(object v, Type t, object p, CultureInfo c) => new SolidColorBrush((bool)v ? Colors.Gray : Color.FromRgb(0, 122, 204)); public object ConvertBack(object v, Type t, object p, CultureInfo c) => null!; }
-    public class UtenteToVisibilityConverter : IValueConverter
-    {
-        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
-        {
-            // Mostra il bottone solo se IsUtente è false
-            if (value is bool isUtente && !isUtente)
-                return Visibility.Visible;
-
-            return Visibility.Collapsed;
-        }
-
-        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
-        {
-            throw new NotImplementedException();
-        }
-    }
+   
     #endregion
 
     #region ▶︎ Helper static classes (Embedding, RAG, VectorSearch)

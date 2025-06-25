@@ -6,7 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Windows;
 
-namespace CamionReportGPT.Vector
+namespace Report_Consumo_Camion.Vector
 {
     public sealed class HnswIndexService
     {

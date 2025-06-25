@@ -1,12 +1,13 @@
-﻿<Window x:Class="CamionReportGPT.MainWindow"
+﻿<Window x:Class="Report_Consumo_Camion.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:local="clr-namespace:CamionReportGPT"
+xmlns:local="clr-namespace:Report_Consumo_Camion;assembly=Report_Consumo_Camion"
+
         xmlns:fm="clr-namespace:WpfMath.Controls;assembly=WpfMath"
         Title="Report GPT Camion Chat" Height="600" Width="800"
         Background="#FAFAFA"
         FontFamily="Segoe UI">
-
+    
     <Window.Resources>
         <local:ChatAlignmentConverter x:Key="ChatAlignmentConverter"/>
         <local:ChatBubbleBackgroundConverter x:Key="ChatBubbleBackgroundConverter"/>
