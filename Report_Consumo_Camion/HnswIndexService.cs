@@ -47,19 +47,35 @@ namespace CamionReportGPT.Vector
             // 3) Se ho un file serializzato, ricarico vettori, id e grafo
             if (File.Exists(_pathGraph) && File.Exists(VectorsPath) && File.Exists(IdsPath))
             {
-                _vectors.AddRange(LoadVectors(VectorsPath));
-                _ids.AddRange(LoadIds(IdsPath));
-                using var fs = File.OpenRead(_pathGraph);
-                // firma: DeserializeGraph(items, distanceFn, generator, stream, threadSafe)
-                var tuple = SmallWorld<float[], float>
-                    .DeserializeGraph(
-                        _vectors,
+                try
+                {
+                    _vectors.AddRange(LoadVectors(VectorsPath));
+                    _ids.AddRange(LoadIds(IdsPath));
+                    using var fs = File.OpenRead(_pathGraph);
+                    // firma: DeserializeGraph(items, distanceFn, generator, stream, threadSafe)
+                    var tuple = SmallWorld<float[], float>
+                        .DeserializeGraph(
+                            _vectors,
+                            CosineDistance.ForUnits,
+                            DefaultRandomGenerator.Instance,
+                            fs,
+                            threadSafe: true
+                        );
+                    _graph = tuple.Graph;
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Errore nella deserializzazione dell'indice HNSW: {ex.Message}. Si procede con indice vuoto.");
+                    // se la deserializzazione fallisce ripartiamo con un grafo vuoto
+                    _graph = new SmallWorld<float[], float>(
                         CosineDistance.ForUnits,
                         DefaultRandomGenerator.Instance,
-                        fs,
+                        parms,
                         threadSafe: true
                     );
-                _graph = tuple.Graph;
+                    _vectors.Clear();
+                    _ids.Clear();
+                }
             }
         }
 

@@ -30,7 +30,7 @@ namespace CamionReportGPT
     public partial class MainWindow : Window
     {
         #region ✔︎ Costanti di configurazione
-        public const string ConnString = "Server=192.168.1.24\\sgam;Database=PARATORI;User Id=sapara;Password=HAHAHHAHAH;Encrypt=True;TrustServerCertificate=True;";
+        public const string ConnString = "Server=192.168.1.24\\sgam;Database=PARATORI;User Id=sapara;Password=AHHAHAHAH;Encrypt=True;TrustServerCertificate=True;";
         public const string OpenAIApiKey = "key";
         public const string EmbModel = "text-embedding-3-small"; // modello embedding
         private const string AssistantId = "asst_JMGFXRnQZv4mz4cOim6lDnXe"; // assistant per testo esplicativo
@@ -288,7 +288,7 @@ Campi:
             sb.AppendLine("1.Se servono dati, genera UN SOLO blocco SQL compreso tra delimitatori @ … @");
             sb.AppendLine("   • Inserisci subito dopo l'ultimo @ un flag: 1 se l’utente desidera anche una spiegazione, altrimenti 0.");
             sb.AppendLine("2. Se per rispondere è necessario calcolo matematico avanzato (regressioni, equazioni, correlazioni, forecast,");
-            sb.AppendLine("   deviazione standard, ecc.) aggiungi subito dopo un blocco Python compreso tra # python … #.");
+            sb.AppendLine("   deviazione standard, ecc.) aggiungi subito dopo un blocco Python compreso tra ```python codicePython ```.");
             sb.AppendLine("   • Assumi che il DataFrame risultante dalla query sia già caricato in una variabile `df`.");
             sb.AppendLine("   • Usa SOLO le librerie: pandas, numpy, sympy, scipy, scikit-learn.");
             sb.AppendLine("   • Termina SEMPRE lo script con:");
@@ -307,7 +307,7 @@ Campi:
             sb.AppendLine("@SELECT Data, [Consumo_km/l]");
             sb.AppendLine("  FROM tbDatiConsumo");
             sb.AppendLine("  WHERE Targa = 'AB123CD' AND Data >= '2020-01-01'@0");
-            sb.AppendLine("#");
+            sb.AppendLine("```python");
             sb.AppendLine("import pandas as pd, numpy as np, json, sys");
             sb.AppendLine("from sklearn.linear_model import LinearRegression");
             sb.AppendLine("df['DataNum'] = pd.to_datetime(df['Data']).map(pd.Timestamp.toordinal)");
@@ -315,7 +315,7 @@ Campi:
             sb.AppendLine("future = pd.to_datetime(['2024-12-01']).map(pd.Timestamp.toordinal).values.reshape(-1,1)");
             sb.AppendLine("pred = model.predict(future)");
             sb.AppendLine("json.dump({\"result\": float(pred[0])}, sys.stdout)");
-            sb.AppendLine("#");
+            sb.AppendLine("```");
             sb.AppendLine();
             sb.AppendLine("Schema tabelle a cui dovrai fare riferimento per le query:");
             sb.AppendLine(SchemaDescrizione);
@@ -339,7 +339,7 @@ Campi:
             int flag = int.Parse(sqlMatch.Groups[2].Value);
 
             string? py = null;
-            var pyMatch = Regex.Match(gptReply, "#(.*?)#", RegexOptions.Singleline);
+            var pyMatch = Regex.Match(gptReply, "```python(.*?)```", RegexOptions.Singleline);
             if (pyMatch.Success)
                 py = pyMatch.Groups[1].Value.Trim();
 
@@ -442,29 +442,57 @@ Campi:
 
         private static async Task<string> EseguiPythonAsync(string code, string csvPath)
         {
-            string scriptFile = Path.GetTempFileName() + ".py";
-            await File.WriteAllTextAsync(scriptFile,
-                $"import pandas as pd\nimport json, sys\n" +
-                $"df=pd.read_csv(r'{csvPath}')\n" + code);
+            // 1️⃣ Percorso completo del tuo python.exe
+            const string pythonExe =
+                @"C:\Users\omar.tagliabue\AppData\Local\Programs\Python\Python312\python.exe";
 
-            var psi = new ProcessStartInfo("python3", scriptFile)
+
+            // 2️⃣ Genera uno script temporaneo
+            string scriptFile = Path.Combine(
+                Path.GetTempPath(),
+                $"{Guid.NewGuid():N}.py");
+
+            // 3️⃣ Scrivi il .py con import e codice utente
+            var sb = new StringBuilder();
+            sb.AppendLine("import pandas as pd");
+            sb.AppendLine("import json, sys");
+            sb.AppendLine($"df = pd.read_csv(r\"{csvPath}\")");
+            sb.AppendLine(code);
+            // Assicurati che il codice utente termini con json.dump({"result": ...}, sys.stdout)
+            await File.WriteAllTextAsync(scriptFile, sb.ToString());
+
+            // 4️⃣ Configura il ProcessStartInfo
+            var psi = new ProcessStartInfo
             {
+                FileName = pythonExe,
+                Arguments = $"\"{scriptFile}\"",
                 RedirectStandardOutput = true,
-                RedirectStandardError = true
+                RedirectStandardError = true,
+                UseShellExecute = false,    // deve essere false per poter redirigere
+                CreateNoWindow = true,     // non apre console
+                WorkingDirectory = Path.GetDirectoryName(scriptFile)
             };
 
+            // 5️⃣ Avvia il processo e cattura output
             using var proc = Process.Start(psi)!;
-            string output = await proc.StandardOutput.ReadToEndAsync();
-            string err = await proc.StandardError.ReadToEndAsync();
+            string stdout = await proc.StandardOutput.ReadToEndAsync();
+            string stderr = await proc.StandardError.ReadToEndAsync();
             await proc.WaitForExitAsync();
+
+            // 6️⃣ Pulisci lo script temporaneo
             File.Delete(scriptFile);
+
+            // 7️⃣ Se l’exit code è diverso da 0, restituisci l’errore
             if (proc.ExitCode != 0)
-                return $"Errore Python: {err}";
-            return output.Trim();
+                return $"Errore Python:\n{stderr.Trim()}";
+
+            // 8️⃣ Altrimenti restituisci il JSON / il risultato pulito
+            return stdout.Trim();
         }
 
 
-        
+
+
         private async void btnSalvaEmbedding_Click(object sender, RoutedEventArgs e)
         {
             if (messaggi.Count < 2) return;
