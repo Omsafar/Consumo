@@ -30,8 +30,8 @@ namespace CamionReportGPT
     public partial class MainWindow : Window
     {
         #region ✔︎ Costanti di configurazione
-        public const string ConnString = "Server=192.168.1.24\\sgam;Database=PARATORI;User Id=sapara;Password=AHHAHAHAH;Encrypt=True;TrustServerCertificate=True;";
-        public const string OpenAIApiKey = "key";
+        public const string ConnString = "Server=192.168.1.24\\sgam;Database=PARATORI;User Id=sapara;Password=HAHAHAHAH;Encrypt=True;TrustServerCertificate=True;";
+        public const string OpenAIApiKey = "Key";
         public const string EmbModel = "text-embedding-3-small"; // modello embedding
         private const string AssistantId = "asst_JMGFXRnQZv4mz4cOim6lDnXe"; // assistant per testo esplicativo
 
@@ -201,12 +201,12 @@ Campi:
 
             DataTable result = await EseguiQueryAsync(sql);
             string tableMd = DataTableToMarkdown(result);
-            string? pythonResult = null;
+            PythonOutput? pyOut = null;
             if (!string.IsNullOrWhiteSpace(py))
             {
                 string csv = Path.GetTempFileName();
                 SaveDataTableToCsv(result, csv);
-                pythonResult = await EseguiPythonAsync(py, csv);
+                pyOut = await EseguiPythonAsync(py, csv);
             }
 
             if (flag == 1)
@@ -220,10 +220,10 @@ Campi:
                 messaggi.Add(new MessaggioChat { Testo = tableMd, IsUtente = false });
             }
 
-            if (pythonResult != null)
-                messaggi.Add(new MessaggioChat { Testo = pythonResult, IsUtente = false });            
+            if (pyOut != null)
+                messaggi.Add(new MessaggioChat { IsUtente = false, Result = pyOut.Result, Formula = pyOut.Formula, Explain = pyOut.Explain });
             // 3) Memorizzo l’ultima domanda e query (servono in btnFeedback_Click)
-           
+
             UltimaDomandaUtente = domandaUtente;
             UltimaQuerySql = sql;
             UltimoPythonCode = py;
@@ -293,7 +293,7 @@ Campi:
             sb.AppendLine("   • Usa SOLO le librerie: pandas, numpy, sympy, scipy, scikit-learn.");
             sb.AppendLine("   • Termina SEMPRE lo script con:");
             sb.AppendLine("       import json, sys");
-            sb.AppendLine("       json.dump({\"result\": <tuo_valore>}, sys.stdout)");
+            sb.AppendLine("       json.dump({'result': <tuo_valore>, 'formula': '<latex>', 'explain': '<breve testo>'}, sys.stdout)");
             sb.AppendLine("3. Se la domanda si risolve con sole funzioni SQL standard (SUM, AVG, MAX, COUNT, MIN) NON generare il blocco Python.");
             sb.AppendLine("4. NON scrivere testo fuori dai blocchi. Nessuna spiegazione, commento o Markdown extra.");
             sb.AppendLine();
@@ -314,7 +314,7 @@ Campi:
             sb.AppendLine("model = LinearRegression().fit(df[['DataNum']], df['Consumo_km/l'])");
             sb.AppendLine("future = pd.to_datetime(['2024-12-01']).map(pd.Timestamp.toordinal).values.reshape(-1,1)");
             sb.AppendLine("pred = model.predict(future)");
-            sb.AppendLine("json.dump({\"result\": float(pred[0])}, sys.stdout)");
+            sb.AppendLine("json.dump({'result': float(pred[0]), 'formula': 'y=mx+b', 'explain': 'retta di regressione'}, sys.stdout)");
             sb.AppendLine("```");
             sb.AppendLine();
             sb.AppendLine("Schema tabelle a cui dovrai fare riferimento per le query:");
@@ -439,8 +439,8 @@ Campi:
                 csv.NextRecord();
             }
         }
-
-        private static async Task<string> EseguiPythonAsync(string code, string csvPath)
+    
+        private static async Task<PythonOutput?> EseguiPythonAsync(string code, string csvPath)
         {
             // 1️⃣ Percorso completo del tuo python.exe
             const string pythonExe =
@@ -458,7 +458,7 @@ Campi:
             sb.AppendLine("import json, sys");
             sb.AppendLine($"df = pd.read_csv(r\"{csvPath}\")");
             sb.AppendLine(code);
-            // Assicurati che il codice utente termini con json.dump({"result": ...}, sys.stdout)
+            // Assicurati che il codice utente termini con json.dump({'result': ..., 'formula': ..., 'explain': ...}, sys.stdout)
             await File.WriteAllTextAsync(scriptFile, sb.ToString());
 
             // 4️⃣ Configura il ProcessStartInfo
@@ -484,10 +484,20 @@ Campi:
 
             // 7️⃣ Se l’exit code è diverso da 0, restituisci l’errore
             if (proc.ExitCode != 0)
-                return $"Errore Python:\n{stderr.Trim()}";
+                return new PythonOutput($"Errore Python: {stderr.Trim()}", string.Empty, string.Empty);
 
-            // 8️⃣ Altrimenti restituisci il JSON / il risultato pulito
-            return stdout.Trim();
+            try
+            {
+                dynamic js = JsonConvert.DeserializeObject(stdout);
+                string result = js.result?.ToString() ?? string.Empty;
+                string formula = js.formula?.ToString() ?? string.Empty;
+                string explain = js.explain?.ToString() ?? string.Empty;
+                return new PythonOutput(result, formula, explain);
+            }
+            catch (Exception ex)
+            {
+                return new PythonOutput($"Errore parsing JSON: {ex.Message}", string.Empty, string.Empty);
+            }
         }
 
 
@@ -567,7 +577,17 @@ Campi:
     }
 
     #region ▶︎ Model & converters
-    public class MessaggioChat { public string Testo { get; set; } = string.Empty; public bool IsUtente { get; set; } }
+    public class MessaggioChat
+    {
+        public string? Testo { get; set; }
+        public bool IsUtente { get; set; }
+        public string? Result { get; set; }
+        public string? Formula { get; set; }
+        public string? Explain { get; set; }
+        public bool HasPython => !string.IsNullOrWhiteSpace(Result);
+    }
+
+    public record PythonOutput(string Result, string Formula, string Explain);
     public class ChatAlignmentConverter : IValueConverter { public object Convert(object v, Type t, object p, CultureInfo c) => (bool)v ? HorizontalAlignment.Left : HorizontalAlignment.Right; public object ConvertBack(object v, Type t, object p, CultureInfo c) => null!; }
     public class ChatBubbleBackgroundConverter : IValueConverter { public object Convert(object v, Type t, object p, CultureInfo c) => new SolidColorBrush((bool)v ? Colors.LightGray : Colors.WhiteSmoke); public object ConvertBack(object v, Type t, object p, CultureInfo c) => null!; }
     public class ChatBubbleBorderBrushConverter : IValueConverter { public object Convert(object v, Type t, object p, CultureInfo c) => new SolidColorBrush((bool)v ? Colors.Gray : Color.FromRgb(0, 122, 204)); public object ConvertBack(object v, Type t, object p, CultureInfo c) => null!; }

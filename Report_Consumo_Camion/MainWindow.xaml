@@ -2,6 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:CamionReportGPT"
+        xmlns:fm="clr-namespace:WpfMath.Controls;assembly=WpfMath"
         Title="Report GPT Camion Chat" Height="600" Width="800"
         Background="#FAFAFA"
         FontFamily="Segoe UI">
@@ -11,6 +12,7 @@
         <local:ChatBubbleBackgroundConverter x:Key="ChatBubbleBackgroundConverter"/>
         <local:ChatBubbleBorderBrushConverter x:Key="ChatBubbleBorderBrushConverter"/>
         <local:UtenteToVisibilityConverter x:Key="UtenteToVisibilityConverter"/>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
     </Window.Resources>
 
     <Grid Margin="20">
@@ -34,15 +36,34 @@
                                 MaxWidth="500"
                                 Margin="5">
                                 <StackPanel>
-                                <TextBox Text="{Binding Testo}" 
+                                    <TextBox Text="{Binding Testo}"
                                      IsReadOnly="True"
                                      BorderThickness="0"
                                      Background="Transparent"
                                      TextWrapping="Wrap"
                                      Padding="4"
                                      IsReadOnlyCaretVisible="False"
-                                     Cursor="IBeam" />
+                                     Cursor="IBeam">
+                                        <TextBox.Style>
+                                            <Style TargetType="TextBox">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding Testo}" Value="">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding Testo}" Value="{x:Null}">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBox.Style>
+                                    </TextBox>
 
+                                    <StackPanel Visibility="{Binding HasPython, Converter={StaticResource BoolToVis}}" Margin="0,4,0,0">
+                                        <TextBlock Text="{Binding Result, StringFormat='Risultato: {0}'}" FontWeight="Bold" />
+                                        <fm:FormulaControl Formula="{Binding Formula}" Margin="0,4,0,0"/>
+                                        <TextBlock Text="{Binding Explain}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                                    </StackPanel>
 
                                     <Button Content="✅ Utile"
                                         Tag="{Binding}"
