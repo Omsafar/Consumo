@@ -30,7 +30,7 @@ namespace CamionReportGPT
     public partial class MainWindow : Window
     {
         #region ✔︎ Costanti di configurazione
-        public const string ConnString = "Server=192.168.1.24\\sgam;Database=PARATORI;User Id=sapara;Password=AHHAHAH;Encrypt=True;TrustServerCertificate=True;";
+        public const string ConnString = "Server=192.168.1.24\\sgam;Database=PARATORI;User Id=sapara;Password=HAHAHHAHA;Encrypt=True;TrustServerCertificate=True;";
         public const string OpenAIApiKey = "key";
         public const string EmbModel = "text-embedding-3-small"; // modello embedding
         private const string AssistantId = "asst_JMGFXRnQZv4mz4cOim6lDnXe"; // assistant per testo esplicativo
@@ -603,7 +603,21 @@ Campi:
             throw new NotImplementedException();
         }
     }
+    /// <summary>
+    ///  Restituisce Visible se la stringa non è vuota, altrimenti Collapsed.
+    /// </summary>
+    public sealed class NullOrEmptyToVisibilityConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType,
+                              object parameter, CultureInfo culture) =>
+            string.IsNullOrWhiteSpace(value as string)
+                ? Visibility.Collapsed
+                : Visibility.Visible;
 
+        public object ConvertBack(object value, Type targetType,
+                                  object parameter, CultureInfo culture) =>
+            throw new NotSupportedException();
+    }
     #endregion
 
     #region ▶︎ Helper static classes (Embedding, RAG, VectorSearch)
