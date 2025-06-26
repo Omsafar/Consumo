@@ -30,7 +30,7 @@ namespace CamionReportGPT
     public partial class MainWindow : Window
     {
         #region ✔︎ Costanti di configurazione
-        public const string ConnString = "Server=192.168.1.24\\sgam;Database=PARATORI;User Id=sapara;Password=HAHAHHAHA;Encrypt=True;TrustServerCertificate=True;";
+        public const string ConnString = "Server=192.168.1.24\\sgam;Database=PARATORI;User Id=sapara;Password=S@p4ra;Encrypt=True;TrustServerCertificate=True;";
         public const string OpenAIApiKey = "key";
         public const string EmbModel = "text-embedding-3-small"; // modello embedding
         private const string AssistantId = "asst_JMGFXRnQZv4mz4cOim6lDnXe"; // assistant per testo esplicativo
@@ -440,50 +440,45 @@ Campi:
 
         private static async Task<PythonOutput?> EseguiPythonAsync(string code, string csvPath)
         {
-            // 1️⃣ Percorso completo del tuo python.exe
             const string pythonExe =
                 @"C:\Users\omar.tagliabue\AppData\Local\Programs\Python\Python312\python.exe";
 
+            string scriptFile = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.py");
 
-            // 2️⃣ Genera uno script temporaneo
-            string scriptFile = Path.Combine(
-                Path.GetTempPath(),
-                $"{Guid.NewGuid():N}.py");
-
-            // 3️⃣ Scrivi il .py con import e codice utente
-            var sb = new StringBuilder();
-            sb.AppendLine("import pandas as pd");
-            sb.AppendLine("import json, sys");
-            sb.AppendLine($"df = pd.read_csv(r\"{csvPath}\")");
-            sb.AppendLine(code);
-            // Assicurati che il codice utente termini con json.dump({'result': ..., 'formula': ..., 'explain': ...}, sys.stdout)            await File.WriteAllTextAsync(scriptFile, sb.ToString());
-
-            // 4️⃣ Configura il ProcessStartInfo
-            var psi = new ProcessStartInfo
-            {
-                FileName = pythonExe,
-                Arguments = $"\"{scriptFile}\"",
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,    // deve essere false per poter redirigere
-                CreateNoWindow = true,     // non apre console
-                WorkingDirectory = Path.GetDirectoryName(scriptFile)
-            };
-
-            // 5️⃣ Avvia il processo e cattura output
-            using var proc = Process.Start(psi)!;
-            string stdout = await proc.StandardOutput.ReadToEndAsync();
-            string stderr = await proc.StandardError.ReadToEndAsync();
-            await proc.WaitForExitAsync();
-
-            // 6️⃣ Pulisci lo script temporaneo
-            File.Delete(scriptFile);
-
-            // 7️⃣ Se l’exit code è diverso da 0, restituisci l’errore
-            if (proc.ExitCode != 0)
-                return new PythonOutput($"Errore Python: {stderr.Trim()}", string.Empty, string.Empty);
             try
             {
+                // 1️⃣ Scrivi il .py con import e codice utente
+                var sb = new StringBuilder();
+                sb.AppendLine("import pandas as pd");
+                sb.AppendLine("import json, sys");
+                sb.AppendLine($"df = pd.read_csv(r\"{csvPath}\")");
+                sb.AppendLine(code);
+                await File.WriteAllTextAsync(scriptFile, sb.ToString());
+
+                // 2️⃣ Configura ed esegui il processo
+                var psi = new ProcessStartInfo
+                {
+                    FileName = pythonExe,
+                    Arguments = $"\"{scriptFile}\"",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    WorkingDirectory = Path.GetDirectoryName(scriptFile)
+                };
+
+                using var proc = Process.Start(psi)!;
+                string stdout = await proc.StandardOutput.ReadToEndAsync();
+                string stderr = await proc.StandardError.ReadToEndAsync();
+                await proc.WaitForExitAsync();
+
+                // 3️⃣ Errore di esecuzione
+                if (proc.ExitCode != 0)
+                {
+                    MessageBox.Show(stderr, "Errore Python", MessageBoxButton.OK, MessageBoxImage.Error);
+                    return new PythonOutput($"Errore Python: {stderr.Trim()}", string.Empty, string.Empty);
+                }
+
                 dynamic js = JsonConvert.DeserializeObject(stdout);
                 string result = js.result?.ToString() ?? string.Empty;
                 string formula = js.formula?.ToString() ?? string.Empty;
@@ -492,7 +487,13 @@ Campi:
             }
             catch (Exception ex)
             {
+                MessageBox.Show(ex.Message, "Errore parsing JSON", MessageBoxButton.OK, MessageBoxImage.Error);
                 return new PythonOutput($"Errore parsing JSON: {ex.Message}", string.Empty, string.Empty);
+            }
+            finally
+            {
+                if (File.Exists(scriptFile))
+                    File.Delete(scriptFile);
             }
         }
 

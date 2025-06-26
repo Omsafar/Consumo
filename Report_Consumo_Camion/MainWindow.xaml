@@ -22,7 +22,7 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- CHAT -->
+        <!-- CHATt -->
         <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
             <ItemsControl x:Name="chatPanel">
                 <ItemsControl.ItemTemplate>
