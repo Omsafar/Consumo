@@ -62,7 +62,12 @@
 
                                     <StackPanel Visibility="{Binding HasPython, Converter={StaticResource BoolToVis}}" Margin="0,4,0,0">
                                         <TextBlock Text="{Binding Result, StringFormat='Risultato: {0}'}" FontWeight="Bold" />
-                                        <fm:FormulaControl Margin="0,4,0,0" Visibility="{Binding Formula,Converter={StaticResource NullOrEmptyToVisibilityConverter}}"/>
+
+                                        <fm:FormulaControl
+                                            Formula="{Binding Formula, TargetNullValue=''}"
+                                            FontSize="20"
+                                            Margin="0,4,0,0"
+                                            Visibility="{Binding Formula, Converter={StaticResource NullOrEmptyToVisibilityConverter}}"/>   
                                         <TextBlock Text="{Binding Explain}" TextWrapping="Wrap" Margin="0,4,0,0"/>
                                     </StackPanel>
 
