@@ -1,7 +1,7 @@
 ﻿// MainWindow.xaml.cs – versione con RAG, feedback utente e salvataggio embedding
 // 20 Giugno 2025
 
-using Report_Consumo_Camion.Vector;     // namespace dove hai messo HnswIndexService
+using CamionReportGPT.Vector;     // namespace dove hai messo HnswIndexService
 using CsvHelper;
 using HNSW.Net;
 using Microsoft.Data.SqlClient;
@@ -25,13 +25,13 @@ using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
 using static System.Runtime.InteropServices.JavaScript.JSType;
-namespace Report_Consumo_Camion
+namespace CamionReportGPT
 {
     public partial class MainWindow : Window
     {
         #region ✔︎ Costanti di configurazione
-        public const string ConnString = "Server=192.168.1.24\\sgam;Database=PARATORI;User Id=sapara;Password=HAHAHAHAH;Encrypt=True;TrustServerCertificate=True;";
-        public const string OpenAIApiKey = "Key";
+        public const string ConnString = "Server=192.168.1.24\\sgam;Database=PARATORI;User Id=sapara;Password=AHHAHAH;Encrypt=True;TrustServerCertificate=True;";
+        public const string OpenAIApiKey = "key";
         public const string EmbModel = "text-embedding-3-small"; // modello embedding
         private const string AssistantId = "asst_JMGFXRnQZv4mz4cOim6lDnXe"; // assistant per testo esplicativo
 
@@ -293,8 +293,7 @@ Campi:
             sb.AppendLine("   • Usa SOLO le librerie: pandas, numpy, sympy, scipy, scikit-learn.");
             sb.AppendLine("   • Termina SEMPRE lo script con:");
             sb.AppendLine("       import json, sys");
-            sb.AppendLine("       json.dump({'result': <tuo_valore>, 'formula': '<latex>', 'explain': '<breve testo>'}, sys.stdout)");
-            sb.AppendLine("3. Se la domanda si risolve con sole funzioni SQL standard (SUM, AVG, MAX, COUNT, MIN) NON generare il blocco Python.");
+            sb.AppendLine("       json.dump({'result': <tuo_valore>, 'formula': '<latex>', 'explain': '<breve testo>'}, sys.stdout)"); sb.AppendLine("3. Se la domanda si risolve con sole funzioni SQL standard (SUM, AVG, MAX, COUNT, MIN) NON generare il blocco Python.");
             sb.AppendLine("4. NON scrivere testo fuori dai blocchi. Nessuna spiegazione, commento o Markdown extra.");
             sb.AppendLine();
 
@@ -314,8 +313,7 @@ Campi:
             sb.AppendLine("model = LinearRegression().fit(df[['DataNum']], df['Consumo_km/l'])");
             sb.AppendLine("future = pd.to_datetime(['2024-12-01']).map(pd.Timestamp.toordinal).values.reshape(-1,1)");
             sb.AppendLine("pred = model.predict(future)");
-            sb.AppendLine("json.dump({'result': float(pred[0]), 'formula': 'y=mx+b', 'explain': 'retta di regressione'}, sys.stdout)");
-            sb.AppendLine("```");
+            sb.AppendLine("json.dump({'result': float(pred[0]), 'formula': 'y=mx+b', 'explain': 'retta di regressione'}, sys.stdout)"); sb.AppendLine("```");
             sb.AppendLine();
             sb.AppendLine("Schema tabelle a cui dovrai fare riferimento per le query:");
             sb.AppendLine(SchemaDescrizione);
@@ -439,7 +437,7 @@ Campi:
                 csv.NextRecord();
             }
         }
-    
+
         private static async Task<PythonOutput?> EseguiPythonAsync(string code, string csvPath)
         {
             // 1️⃣ Percorso completo del tuo python.exe
@@ -458,8 +456,7 @@ Campi:
             sb.AppendLine("import json, sys");
             sb.AppendLine($"df = pd.read_csv(r\"{csvPath}\")");
             sb.AppendLine(code);
-            // Assicurati che il codice utente termini con json.dump({'result': ..., 'formula': ..., 'explain': ...}, sys.stdout)
-            await File.WriteAllTextAsync(scriptFile, sb.ToString());
+            // Assicurati che il codice utente termini con json.dump({'result': ..., 'formula': ..., 'explain': ...}, sys.stdout)            await File.WriteAllTextAsync(scriptFile, sb.ToString());
 
             // 4️⃣ Configura il ProcessStartInfo
             var psi = new ProcessStartInfo
@@ -485,7 +482,6 @@ Campi:
             // 7️⃣ Se l’exit code è diverso da 0, restituisci l’errore
             if (proc.ExitCode != 0)
                 return new PythonOutput($"Errore Python: {stderr.Trim()}", string.Empty, string.Empty);
-
             try
             {
                 dynamic js = JsonConvert.DeserializeObject(stdout);
@@ -577,7 +573,37 @@ Campi:
     }
 
     #region ▶︎ Model & converters
-   
+    public class MessaggioChat
+    {
+        public string? Testo { get; set; }
+        public bool IsUtente { get; set; }
+        public string? Result { get; set; }
+        public string? Formula { get; set; }
+        public string? Explain { get; set; }
+        public bool HasPython => !string.IsNullOrWhiteSpace(Result);
+    }
+
+    public record PythonOutput(string Result, string Formula, string Explain);
+    public class ChatAlignmentConverter : IValueConverter { public object Convert(object v, Type t, object p, CultureInfo c) => (bool)v ? HorizontalAlignment.Left : HorizontalAlignment.Right; public object ConvertBack(object v, Type t, object p, CultureInfo c) => null!; }
+    public class ChatBubbleBackgroundConverter : IValueConverter { public object Convert(object v, Type t, object p, CultureInfo c) => new SolidColorBrush((bool)v ? Colors.LightGray : Colors.WhiteSmoke); public object ConvertBack(object v, Type t, object p, CultureInfo c) => null!; }
+    public class ChatBubbleBorderBrushConverter : IValueConverter { public object Convert(object v, Type t, object p, CultureInfo c) => new SolidColorBrush((bool)v ? Colors.Gray : Color.FromRgb(0, 122, 204)); public object ConvertBack(object v, Type t, object p, CultureInfo c) => null!; }
+    public class UtenteToVisibilityConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            // Mostra il bottone solo se IsUtente è false
+            if (value is bool isUtente && !isUtente)
+                return Visibility.Visible;
+
+            return Visibility.Collapsed;
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
     #endregion
 
     #region ▶︎ Helper static classes (Embedding, RAG, VectorSearch)

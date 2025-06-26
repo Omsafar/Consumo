@@ -6,7 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
 
-namespace Report_Consumo_Camion
+namespace CamionReportGPT
 {
     public sealed class OpenAIAssistantClient
     {
