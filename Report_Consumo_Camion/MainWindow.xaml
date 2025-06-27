@@ -20,6 +20,7 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
         <!-- CHATt -->
@@ -139,13 +140,19 @@
 
         <!-- PROGRESS BAR -->
         <ProgressBar x:Name="progressBar"
-     Grid.Row="1"
-     Height="10"
-     IsIndeterminate="True"
-     Visibility="Collapsed"
-     Margin="0,10,0,0"
-     Foreground="#007ACC"/>
+                         Grid.Row="2"
+                     Height="10"
+                     IsIndeterminate="True"
+                     Visibility="Collapsed"
+                     Margin="0,5,0,0"
+                     Foreground="#007ACC"/>
 
+        <TextBlock x:Name="loadingText"
+                   Grid.Row="2"
+                   Text="Caricamento, attendere…"
+                   Visibility="Collapsed"
+                   HorizontalAlignment="Center"
+                   Margin="0,0,0,15" />
     </Grid>
 </Window>
 

@@ -84,11 +84,29 @@ Campi:
         #region ▶︎ UI handlers (Invia / Enter / Feedback 👍)
         private async void btnInvia_Click(object sender, RoutedEventArgs e)
         {
-            if (!string.IsNullOrWhiteSpace(txtInput.Text))
+            if (string.IsNullOrWhiteSpace(txtInput.Text)) return;
+
+            string domanda = txtInput.Text.Trim();
+            txtInput.Clear();
+
+            btnInvia.IsEnabled = false;
+            progressBar.Visibility = Visibility.Visible;
+            loadingText.Visibility = Visibility.Visible;
+
+            try
             {
-                string domanda = txtInput.Text.Trim();
-                txtInput.Clear();
                 await GestioneConversazioneAsync(domanda);
+            }
+            catch (Exception ex)
+            {
+                Logger.Log(ex);
+                MessageBox.Show($"Errore: {ex.Message}", "Errore", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                progressBar.Visibility = Visibility.Collapsed;
+                loadingText.Visibility = Visibility.Collapsed;
+                btnInvia.IsEnabled = true;
             }
         }
 
