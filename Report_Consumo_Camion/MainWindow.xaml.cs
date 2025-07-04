@@ -57,6 +57,7 @@ Campi:
         private readonly ObservableCollection<MessaggioChat> messaggi = new();
         private static readonly HttpClient httpClient = new();
         private readonly OpenAIAssistantClient assistantClient;
+        private readonly IProgress<(int current, int total)> csvProgress;
         private readonly HnswIndexService vecIdx;
         private string? UltimaDomandaUtente;
         private string? UltimaQuerySql;
@@ -78,6 +79,12 @@ Campi:
             assistantClient = new OpenAIAssistantClient(OpenAIApiKey);
             vecIdx = new HnswIndexService(@"C:\Users\omar.tagliabue\Desktop\RAG\rag.hnsw");
             chatPanel.ItemsSource = messaggi;
+            csvProgress = new Progress<(int current, int total)>(p =>
+            {
+                progressBar.Maximum = p.total;
+                progressBar.Value = p.current;
+                loadingText.Text = $"Processato {p.current} di {p.total}";
+            });
         }
         #endregion
 
@@ -92,6 +99,9 @@ Campi:
             btnInvia.IsEnabled = false;
             progressBar.Visibility = Visibility.Visible;
             loadingText.Visibility = Visibility.Visible;
+            progressBar.Value = 0;
+            progressBar.IsIndeterminate = true;
+            loadingText.Text = "Esecuzione query...";
 
             try
             {
@@ -106,6 +116,7 @@ Campi:
             {
                 progressBar.Visibility = Visibility.Collapsed;
                 loadingText.Visibility = Visibility.Collapsed;
+                progressBar.IsIndeterminate = false;
                 btnInvia.IsEnabled = true;
             }
         }
@@ -218,12 +229,15 @@ Campi:
             var (sql, flag, py) = EstraiSqlPythonEFlag(sqlPrompt);   // @0 / @1 + python
 
             DataTable result = await EseguiQueryAsync(sql);
+            progressBar.IsIndeterminate = false;
+            progressBar.Value = 0;
+            loadingText.Text = "Elaborazione python...";
             string tableMd = DataTableToMarkdown(result);
             PythonOutput? pyOut = null;
             if (!string.IsNullOrWhiteSpace(py))
             {
                 string csv = Path.GetTempFileName();
-                SaveDataTableToCsv(result, csv);
+                SaveDataTableToCsv(result, csv, csvProgress);
                 pyOut = await EseguiPythonAsync(py, csv);
             }
 
@@ -242,6 +256,8 @@ Campi:
                 messaggi.Add(new MessaggioChat { IsUtente = false, Result = pyOut.Result, Formula = pyOut.Formula, Explain = pyOut.Explain });
             // 3) Memorizzo l’ultima domanda e query (servono in btnFeedback_Click)
 
+            progressBar.Value = progressBar.Maximum;
+            loadingText.Text = "Completato";
             UltimaDomandaUtente = domandaUtente;
             UltimaQuerySql = sql;
             UltimoPythonCode = py;
@@ -439,7 +455,8 @@ Campi:
             return sb.ToString();
         }
 
-        private static void SaveDataTableToCsv(DataTable table, string path)
+        private static void SaveDataTableToCsv(DataTable table, string path,
+                                               IProgress<(int current, int total)>? progress = null)
         {
             using var writer = new StreamWriter(path);
             using var csv = new CsvWriter(writer, CultureInfo.InvariantCulture);
@@ -448,11 +465,14 @@ Campi:
                 csv.WriteField(col.ColumnName);
             csv.NextRecord();
             // Rows
+            int total = table.Rows.Count;
+            int count = 0;
             foreach (DataRow row in table.Rows)
             {
                 foreach (var cell in row.ItemArray)
                     csv.WriteField(cell);
                 csv.NextRecord();
+                progress?.Report((++count, total));
             }
         }
 

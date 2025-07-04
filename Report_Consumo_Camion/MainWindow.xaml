@@ -142,14 +142,15 @@
         <ProgressBar x:Name="progressBar"
                          Grid.Row="2"
                      Height="10"
-                     IsIndeterminate="True"
+                     Minimum="0" Maximum="100"
+                     IsIndeterminate="False"
                      Visibility="Collapsed"
                      Margin="0,5,0,0"
                      Foreground="#007ACC"/>
 
         <TextBlock x:Name="loadingText"
                    Grid.Row="2"
-                   Text="Caricamento, attendere…"
+                   Text=""
                    Visibility="Collapsed"
                    HorizontalAlignment="Center"
                    Margin="0,0,0,15" />
