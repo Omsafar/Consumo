@@ -15,6 +15,7 @@ using System.Globalization;
 using System.IO;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Runtime.ConstrainedExecution;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
@@ -352,6 +353,11 @@ Campi:
             sb.AppendLine("       import json, sys");
             sb.AppendLine("       json.dump({'result': <tuo_valore>, 'formula': '<latex>', 'explain': '<breve testo>'}, sys.stdout)"); sb.AppendLine("3. Se la domanda si risolve con sole funzioni SQL standard (SUM, AVG, MAX, COUNT, MIN) NON generare il blocco Python.");
             sb.AppendLine("4. NON scrivere testo fuori dai blocchi. Nessuna spiegazione, commento o Markdown extra.");
+            sb.AppendLine("5.Se la domanda utente richiede più passaggi sequenziali(es.verifica presenza dati, confronto tra periodi, fallback a previsioni, ecc.), devi rispondere con più blocchi numerati.");
+            sb.AppendLine("• Ogni blocco SQL deve essere racchiuso tra `@...@3 - N`, dove N è il numero progressivo dello step(es: @...@3 - 1, @...@3 - 2, @...@3 - 3).");
+            sb.AppendLine(" • Se serve Python in uno step, il codice deve essere racchiuso in blocco ```python... ``` con il flag corrispondente `@3 - X` subito dopo il blocco.");
+            sb.AppendLine("• Scrivi tutti i blocchi in ordine, senza testo fuori dai blocchi.");
+            sb.AppendLine("• Ogni blocco sarà eseguito separatamente e i risultati saranno passati a un GPT analista per la sintesi finale.");
             sb.AppendLine();
 
             /* ──────────────────── FEW-SHOT EXAMPLE (helpful but not echoed) ──────────────────── */
