@@ -19,5 +19,19 @@ namespace CamionReportGPT
                 // Ignored
             }
         }
+
+
+        public static void LogInfo(string message)
+        {
+            try
+            {
+                File.AppendAllText(LogPath,
+                    $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} - INFO: {message}\n");
+            }
+            catch
+            {
+                // Ignored
+            }
+        }
     }
 }

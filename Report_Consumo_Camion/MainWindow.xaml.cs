@@ -34,6 +34,7 @@ namespace CamionReportGPT
         public const string OpenAIApiKey = "key";
         public const string EmbModel = "text-embedding-3-small"; // modello embedding
         private const string AssistantId = "asst_JMGFXRnQZv4mz4cOim6lDnXe"; // assistant per testo esplicativo
+        private const string ErrorCorrectorAssistantId = "asst_ANQJ6yo179ZJXEtCZ3xuymSJ";
 
         #endregion
 
@@ -62,6 +63,7 @@ Campi:
         private string? UltimaDomandaUtente;
         private string? UltimaQuerySql;
         private string? UltimoPythonCode;
+        private bool correctionAttempted;
         #endregion
 
 
@@ -225,42 +227,63 @@ Campi:
             // ---------------------------------------------------------------------
 
             // 2) --- Chiedi a GPT di generare la SQL ------------------------------
-            string sqlPrompt = await GeneraQuerySqlAsync(domandaUtente);   // implementato altrove
-            var (sql, flag, py) = EstraiSqlPythonEFlag(sqlPrompt);   // @0 / @1 + python
+            string initialPrompt = BuildInitialPrompt(domandaUtente);
+            string gptReply = await CallGPTAsync(initialPrompt);
 
-            DataTable result = await EseguiQueryAsync(sql);
-            progressBar.IsIndeterminate = false;
-            progressBar.Value = 0;
-            loadingText.Text = "Elaborazione python...";
-            string tableMd = DataTableToMarkdown(result);
-            PythonOutput? pyOut = null;
-            if (!string.IsNullOrWhiteSpace(py))
+            correctionAttempted = false;
+            for (int attempt = 0; attempt < 2; attempt++)
             {
-                string csv = Path.GetTempFileName();
-                SaveDataTableToCsv(result, csv, csvProgress);
-                pyOut = await EseguiPythonAsync(py, csv);
-            }
+                try
+                {
+                    var (sql, flag, py) = EstraiSqlPythonEFlag(gptReply);
 
-            if (flag == 1)
-            {
-                string spiegazione = await OttieniSpiegazioneDaGPT(domandaUtente, sql, result);
-                messaggi.Add(new MessaggioChat { Testo = tableMd, IsUtente = false });
-                messaggi.Add(new MessaggioChat { Testo = spiegazione, IsUtente = false });
-            }
-            else
-            {
-                messaggi.Add(new MessaggioChat { Testo = tableMd, IsUtente = false });
-            }
+                    DataTable result = await EseguiQueryAsync(sql);
+                    progressBar.IsIndeterminate = false;
+                    progressBar.Value = 0;
+                    loadingText.Text = "Elaborazione python...";
+                    string tableMd = DataTableToMarkdown(result);
+                    PythonOutput? pyOut = null;
+                    if (!string.IsNullOrWhiteSpace(py))
+                    {
+                        string csv = Path.GetTempFileName();
+                        SaveDataTableToCsv(result, csv, csvProgress);
+                        pyOut = await EseguiPythonAsync(py, csv);
+                    }
 
-            if (pyOut != null)
-                messaggi.Add(new MessaggioChat { IsUtente = false, Result = pyOut.Result, Formula = pyOut.Formula, Explain = pyOut.Explain });
-            // 3) Memorizzo l’ultima domanda e query (servono in btnFeedback_Click)
+                    if (flag == 1)
+                    {
+                        string spiegazione = await OttieniSpiegazioneDaGPT(domandaUtente, sql, result);
+                        messaggi.Add(new MessaggioChat { Testo = tableMd, IsUtente = false });
+                        messaggi.Add(new MessaggioChat { Testo = spiegazione, IsUtente = false });
+                    }
+                    else
+                    {
+                        messaggi.Add(new MessaggioChat { Testo = tableMd, IsUtente = false });
+                    }
 
-            progressBar.Value = progressBar.Maximum;
-            loadingText.Text = "Completato";
-            UltimaDomandaUtente = domandaUtente;
-            UltimaQuerySql = sql;
-            UltimoPythonCode = py;
+                    if (pyOut != null)
+                        messaggi.Add(new MessaggioChat { IsUtente = false, Result = pyOut.Result, Formula = pyOut.Formula, Explain = pyOut.Explain });
+
+                    progressBar.Value = progressBar.Maximum;
+                    loadingText.Text = "Completato";
+                    UltimaDomandaUtente = domandaUtente;
+                    UltimaQuerySql = sql;
+                    UltimoPythonCode = py;
+                    break; // success
+                }
+                catch (Exception ex) when (attempt == 0)
+                {
+                    correctionAttempted = true;
+                    Logger.LogInfo($"Tentativo correzione per errore: {ex.Message}");
+                    string corrected = await CorreggiRispostaAsync(domandaUtente, initialPrompt, gptReply, ex.ToString());
+                    Logger.LogInfo($"Risposta corretta: {corrected}");
+                    gptReply = corrected;
+                }
+                catch
+                {
+                    throw;
+                }
+            }
 
 
         }
@@ -319,7 +342,7 @@ Campi:
             /* ──────────────────── RULES ──────────────────── */
             sb.AppendLine("Sei un assistente per l’analisi di dati aziendali nel settore trasporti.");
             sb.AppendLine("Regole di risposta (obbligatorie):");
-            sb.AppendLine("1.Se servono dati, genera UN SOLO blocco SQL compreso tra delimitatori @ … @");
+            sb.AppendLine("1.Se servono dati, genera UN SOLO blocco con una sintassi SQL Server (T-SQL) compreso tra delimitatori @ … @");
             sb.AppendLine("   • Inserisci subito dopo l'ultimo @ un flag: 1 se l’utente desidera anche una spiegazione, altrimenti 0.");
             sb.AppendLine("2. Se per rispondere è necessario calcolo matematico avanzato (regressioni, equazioni, correlazioni, forecast,");
             sb.AppendLine("   deviazione standard, ecc.) aggiungi subito dopo un blocco Python compreso tra ```python codicePython ```.");
@@ -361,6 +384,12 @@ Campi:
             string prompt = BuildInitialPrompt(domanda);
             return await CallGPTAsync(prompt);
         }
+
+        private Task<string> CorreggiRispostaAsync(string domanda, string prompt, string risposta, string errore, CancellationToken ct = default) =>
+        assistantClient.RunAsync(
+        assistantId: ErrorCorrectorAssistantId,
+        userMessage: $"DOMANDA:\n{domanda}\n\nPROMPT:\n{prompt}\n\nRISPOSTA:\n{risposta}\n\nERRORE:\n{errore}",
+        ct: ct);
 
         private static (string Sql, int Flag, string? Python) EstraiSqlPythonEFlag(string gptReply)
         {
@@ -513,8 +542,7 @@ Campi:
                 // 3️⃣ Errore di esecuzione
                 if (proc.ExitCode != 0)
                 {
-                    MessageBox.Show(stderr, "Errore Python", MessageBoxButton.OK, MessageBoxImage.Error);
-                    return new PythonOutput($"Errore Python: {stderr.Trim()}", string.Empty, string.Empty);
+                    throw new Exception($"Python error: {stderr.Trim()}");
                 }
 
                 dynamic js = JsonConvert.DeserializeObject(stdout);
@@ -525,8 +553,7 @@ Campi:
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Errore parsing JSON", MessageBoxButton.OK, MessageBoxImage.Error);
-                return new PythonOutput($"Errore parsing JSON: {ex.Message}", string.Empty, string.Empty);
+                throw new Exception($"Python error: {ex.Message}");
             }
             finally
             {
