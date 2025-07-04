@@ -18,6 +18,7 @@ using System.Net.Http.Headers;
 using System.Runtime.ConstrainedExecution;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -231,6 +232,33 @@ Campi:
             string initialPrompt = BuildInitialPrompt(domandaUtente);
             string gptReply = await CallGPTAsync(initialPrompt);
 
+            if (Regex.IsMatch(gptReply, "@3\\s*-\\s*\\d+"))
+            {
+                var steps = EstraiStepDaRisposta(gptReply);
+                var results = await EseguiStepsAsync(steps);
+
+                progressBar.IsIndeterminate = false;
+                progressBar.Value = progressBar.Maximum;
+                loadingText.Text = "Completato";
+
+                foreach (var r in results.OrderBy(r => r.Number))
+                {
+                    string md = DataTableToMarkdown(r.Table);
+                    messaggi.Add(new MessaggioChat { Testo = $"**Step {r.Number}:**\\n\\n{md}", IsUtente = false });
+                    if (r.Py != null)
+                        messaggi.Add(new MessaggioChat { IsUtente = false, Result = r.Py.Result, Formula = r.Py.Formula, Explain = r.Py.Explain });
+                }
+
+                string sintesi = await InviaAdAnalistaAsync(results);
+                messaggi.Add(new MessaggioChat { Testo = sintesi, IsUtente = false });
+
+                UltimaDomandaUtente = domandaUtente;
+                UltimaQuerySql = string.Join("\n\n", steps.Select(s => s.Sql));
+                UltimoPythonCode = string.Join("\n\n", steps.Where(s => !string.IsNullOrWhiteSpace(s.Python)).Select(s => s.Python!));
+
+                return;
+            }
+
             correctionAttempted = false;
             for (int attempt = 0; attempt < 2; attempt++)
             {
@@ -354,8 +382,9 @@ Campi:
             sb.AppendLine("       json.dump({'result': <tuo_valore>, 'formula': '<latex>', 'explain': '<breve testo>'}, sys.stdout)"); sb.AppendLine("3. Se la domanda si risolve con sole funzioni SQL standard (SUM, AVG, MAX, COUNT, MIN) NON generare il blocco Python.");
             sb.AppendLine("4. NON scrivere testo fuori dai blocchi. Nessuna spiegazione, commento o Markdown extra.");
             sb.AppendLine("5.Se la domanda utente richiede più passaggi sequenziali(es.verifica presenza dati, confronto tra periodi, fallback a previsioni, ecc.), devi rispondere con più blocchi numerati.");
+            sb.AppendLine("• NON usare flag `@0` o `@1` in questo caso.");
             sb.AppendLine("• Ogni blocco SQL deve essere racchiuso tra `@...@3 - N`, dove N è il numero progressivo dello step(es: @...@3 - 1, @...@3 - 2, @...@3 - 3).");
-            sb.AppendLine(" • Se serve Python in uno step, il codice deve essere racchiuso in blocco ```python... ``` con il flag corrispondente `@3 - X` subito dopo il blocco.");
+            sb.AppendLine("• Se serve Python in uno step, il codice deve essere racchiuso in blocco ```python... ``` con il flag corrispondente `@3 - X` subito dopo il blocco.");
             sb.AppendLine("• Scrivi tutti i blocchi in ordine, senza testo fuori dai blocchi.");
             sb.AppendLine("• Ogni blocco sarà eseguito separatamente e i risultati saranno passati a un GPT analista per la sintesi finale.");
             sb.AppendLine();
